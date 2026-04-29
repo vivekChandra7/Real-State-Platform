@@ -11,7 +11,7 @@ export const getProfile = async (req, res) => {
       success: true,
       user,
     });
-    res.json(user);
+    
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -32,6 +32,10 @@ export const getPublicProfile = async (req, res) => {
         message: "User not found",
       });
     }
+     return res.status(200).json({
+      success: true,
+      user,
+    });
   } catch (error) {
     res.status(500).json({
       success: false,
