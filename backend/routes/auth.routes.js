@@ -1,7 +1,7 @@
 import express from "express";
 
 import { registerUser, login, forgotPassword, resetPassword, verifyEmail, getMe } from "../controllers/auth.controller.js";
-const {protect } = await import("../middlewares/auth.middleware.js");
+import { protect } from "../middlewares/auth.middleware.js";
 
 const authRouter = express.Router();
 
