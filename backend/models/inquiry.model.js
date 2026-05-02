@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import Property from "./property.model";
-import User from "./user.model";
+import Property from "./property.model.js";
+import User from "./user.model.js";
 
 const inquirySchema = new mongoose.Schema(
   {
