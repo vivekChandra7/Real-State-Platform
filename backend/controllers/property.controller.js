@@ -1,10 +1,12 @@
-import Property from "../models/property.model";
-import Inquiry from "../models/inquiry.model";
-import { uploadToCloudinary } from "../utils/uploadToCloudinary";
-import cloudinary from "../config/cloudinary";
+import Property from "../models/property.model.js";
+import Inquiry from "../models/inquiry.model.js";
+import { uploadToCloudinary } from "../utils/uploadToCloudinary.js";
+import cloudinary from "../config/cloudinary.js";
+import jwt from "jsonwebtoken";
+import User from "../models/user.model.js";
 
 // add a property
-export const addproperty = async (req, res) => {
+export const addProperty = async (req, res) => {
   try {
     let imgUrls = [];
     if (req.files && req.files.length > 0) {
@@ -26,7 +28,7 @@ export const addproperty = async (req, res) => {
       areaSize: req.body.areaSize ? Number(req.body.areaSize) : undefined,
       furnishing: req.body.furnishing,
       status: req.body.status,
-      images: imageUrls,
+      images: imgUrls,
       seller: req.user._id,
       amenities: req.body.amenities
         ? Array.isArray(req.body.amenities)
@@ -58,10 +60,6 @@ export const addproperty = async (req, res) => {
 export const getMyProperties = async (req, res) => {
   try {
     const properties = await Property.find({ seller: req.user._id });
-    res.json({
-      success: true,
-      properties,
-    });
     res.json({
       success: true,
       properties,
@@ -214,13 +212,11 @@ export const updatePropertyStatus = async (req, res) => {
     }
     property.status = req.body.status;
     await property.save();
-     res.json({
+    res.json({
       success: true,
       message: "Property status updated",
       property,
     });
-
-
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -228,7 +224,6 @@ export const updatePropertyStatus = async (req, res) => {
     });
   }
 };
-
 
 // GET ALL PROPERTIES
 
@@ -310,28 +305,127 @@ export const getAllProperties = async (req, res) => {
       error: error.message,
     });
   }
-}; 
-
+};
 
 // get property details
 
 export const getPropertyDetails = async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id).populate("seller", "name phone profilePic");
+    const property = await Property.findById(req.params.id).populate(
+      "seller",
+      "name phone profilePic",
+    );
     if (!property) {
       return res.status(404).json({
         success: false,
         message: "Property not found",
       });
-    } 
+    }
 
-  // unique view tracking by id 
-   let visitorId = req.ip;
-   const authHeader = req.headers.authorization;    
+    // unique view tracking by id
+    let visitorId = req.ip;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        visitorId = decoded.id;
+      } catch (err) {
+        // ignore
+      }
+    }
+    const isSellerChecking = visitorId === property.seller._id.toString();
+    if (!isSellerChecking && !property.viewedBy.includes(visitorId)) {
+      property.views += 1;
+      property.viewedBy.push(visitorId);
+      await property.save();
+    }
+    const similarProperties = await Property.find({
+      _id: { $ne: property._id },
+      city: property.city,
+      propertyType: property.propertyType,
+      status: property.status,
+    })
+      .limit(4)
+      .select("title price city area images propertyType status");
+    res.json({
+      success: true,
+      property,
+      similarProperties,
+    });
   } catch (error) {
-    
-
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
+};
 
-}
+// seller dashboard
 
+export const getSellerDashboard = async (req, res) => {
+  try {
+    const sellerId = req.user._id;
+
+    const totalProperties = await Property.countDocuments({ seller: sellerId });
+    const activeListings = await Property.countDocuments({
+      seller: sellerId,
+      status: "sale",
+    });
+    const soldProperties = await Property.countDocuments({
+      seller: sellerId,
+      status: "sold",
+    });
+    const inquiries = await Inquiry.countDocuments({ seller: sellerId });
+
+    const properties = await Property.aggregate([
+      { $match: { seller: sellerId } },
+      { $group: { _id: null, totalViews: { $sum: "$views" } } },
+    ]);
+    const totalViews = properties.length > 0 ? properties[0].totalViews : 0;
+
+    res.json({
+      success: true,
+      dashboardData: {
+        totalProperties,
+        activeListings,
+        soldProperties,
+        inquiries,
+        totalViews,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while fetching dashboard",
+      error: error.message,
+    });
+  }
+};
+
+// get property counts by type
+export const getPropertyCounts = async (req, res) => {
+  try {
+    const counts = await Property.aggregate([
+      { $match: { status: "sale" } },
+      { $group: { _id: "$propertyType", count: { $sum: 1 } } },
+    ]);
+
+    const formattedCounts = counts.reduce((acc, curr) => {
+      acc[curr._id] = curr.count;
+      return acc;
+    }, {});
+    
+    res.json({
+      success: true,
+      counts: formattedCounts,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while fetching property counts",
+      error: error.message,
+    });
+  }
+};
