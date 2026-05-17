@@ -116,7 +116,7 @@ export const getAllInquiries = async (req, res) => {
     const inquiries = await Inquiry.find()
       .populate("buyer", "name email")
       .populate("seller", "name email")
-      .populate("property", "title price")
+      .populate("Property", "title price")
       .sort({ createdAt: -1 });
     res.status(200).json({
       success: true,
@@ -179,6 +179,30 @@ export const getPendingSellerRequests = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch pending seller requests",
-    });
+    }); 
   }
 };
+
+// to approve or reject a seller account request (admin only)
+
+export const approveSeller = async (req, res) => {
+  try {
+     const seller = await User.findById(req.params.id);
+    if (!seller || seller.role !== "seller") {
+      return res.status(404).json({
+        success: false,
+        message: "Seller not found",
+      });
+    }
+    seller.isApproved = true; 
+    await seller.save();
+    res.status(200).json({
+      success: true,
+      message: "Seller account approved successfully",
+      seller
+    });
+  } catch (error) {
+    
+  }
+
+}
